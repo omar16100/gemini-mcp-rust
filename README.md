@@ -26,7 +26,7 @@ High-performance Model Context Protocol (MCP) server for Google's Gemini API, wr
 ### Build from Source
 
 ```bash
-git clone https://github.com/yourusername/gemini-mcp-rust.git
+git clone https://github.com/omar16100/gemini-mcp-rust.git
 cd gemini-mcp-rust
 
 # Set up environment
@@ -43,7 +43,7 @@ cargo build --release
 
 ```bash
 # Clone and build
-git clone https://github.com/yourusername/gemini-mcp-rust.git
+git clone https://github.com/omar16100/gemini-mcp-rust.git
 cd gemini-mcp-rust
 cargo build --release
 
@@ -299,19 +299,18 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Built with the [Model Context Protocol](https://modelcontextprotocol.io/)
 - Powered by [Google Gemini API](https://ai.google.dev/)
-- Inspired by the TypeScript [@rlabs/gemini-mcp](https://github.com/yourusername/gemini-mcp)
+- Inspired by the TypeScript [@rlabs/gemini-mcp](https://github.com/RLabs-Inc/gemini-mcp)
 
 ## 🔗 Related Projects
 
-- [TypeScript Gemini MCP](https://github.com/yourusername/gemini-mcp) - Node.js version
+- [TypeScript Gemini MCP](https://github.com/RLabs-Inc/gemini-mcp) - Node.js version
 - [MCP Specification](https://spec.modelcontextprotocol.io/)
 - [Claude Desktop](https://claude.ai/download)
 
 ## 📮 Support
 
-- 🐛 [Report a Bug](https://github.com/yourusername/gemini-mcp-rust/issues)
-- 💡 [Request a Feature](https://github.com/yourusername/gemini-mcp-rust/issues)
-- 📧 [Contact](mailto:your-email@example.com)
+- 🐛 [Report a Bug](https://github.com/omar16100/gemini-mcp-rust/issues)
+- 💡 [Request a Feature](https://github.com/omar16100/gemini-mcp-rust/issues)
 
 ---
 
