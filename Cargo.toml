@@ -1,0 +1,49 @@
+[package]
+name = "gemini-mcp-rust"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "gemini-mcp"
+path = "src/main.rs"
+
+[dependencies]
+# HTTP & Async
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# CLI & Config
+clap = { version = "4", features = ["derive"] }
+dotenvy = "0.15"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Regex for brainstorm consensus extraction
+regex = "1"
+
+# Schema generation for MCP tools
+schemars = "0.8"
+
+# MCP SDK - removed temporarily due to API complexity
+# Will implement simple stdio JSON-RPC MCP server directly
+# rust-mcp-sdk = { version = "0.7", features = ["server", "stdio"] }
+
+[dev-dependencies]
+mockito = "1.5"
+tokio-test = "0.4"
+
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = true          # Enable link-time optimization
+codegen-units = 1   # Better optimization
+strip = true        # Strip symbols
