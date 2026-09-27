@@ -1,7 +1,4 @@
 pub mod client;
 pub mod models;
+pub mod retry;
 pub mod types;
-
-pub use client::GeminiClient;
-pub use models::GeminiModel;
-pub use types::*;

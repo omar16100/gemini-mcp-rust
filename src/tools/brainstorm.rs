@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::gemini::{client::GeminiClient, models::GeminiModel, types::GenerationConfig};
+use crate::gemini::{client::GeminiClient, models::GeminiModel};
 use crate::tools::types::{GenerationParams, ModelPreference, ResponseMetadata, ToolResponse};
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -65,7 +65,7 @@ pub struct Idea {
     pub text: String,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ConsensusTheme {
     pub theme: String,
     pub frequency: usize,
@@ -110,9 +110,7 @@ pub async fn execute_v2(
 ) -> anyhow::Result<ToolResponse<BrainstormResult>> {
     debug!(
         "Brainstorm v2: topic={}, num_ideas={}, extract_consensus={}",
-        input.prompt,
-        input.num_ideas,
-        input.extract_consensus
+        input.prompt, input.num_ideas, input.extract_consensus
     );
 
     // Validate input
@@ -141,12 +139,7 @@ pub async fn execute_v2(
         Some(ModelPreference::Pro) | None => GeminiModel::Pro,
     };
 
-    let config = GenerationConfig {
-        temperature: input.params.as_ref().and_then(|p| p.temperature).or(Some(0.9)),
-        max_output_tokens: input.params.as_ref().and_then(|p| p.max_tokens).or(Some(2048)),
-        top_p: input.params.as_ref().and_then(|p| p.top_p),
-        top_k: input.params.as_ref().and_then(|p| p.top_k),
-    };
+    let config = GenerationParams::to_config(input.params.as_ref(), Some(0.9), Some(2048));
 
     let response = client
         .generate_content(&prompt, model, Some(config))
@@ -171,7 +164,7 @@ pub async fn execute_v2(
         consensus_themes,
     };
 
-    let metadata = ResponseMetadata::with_usage(model.as_str(), &response.usage);
+    let metadata = ResponseMetadata::with_usage(client.model_name(model), &response.usage);
 
     Ok(ToolResponse { result, metadata })
 }
@@ -203,56 +196,177 @@ fn parse_ideas(text: &str) -> Vec<Idea> {
 }
 
 fn extract_consensus_themes(ideas: &[Idea]) -> Vec<ConsensusTheme> {
-    // Extract keywords from each idea (4+ character words)
-    let word_regex = Regex::new(r"\b[a-zA-Z]{4,}\b").unwrap();
+    use std::collections::HashSet;
+
+    // Expanded stop words list
+    let stop_words: HashSet<&str> = [
+        "that", "this", "with", "from", "have", "will", "would", "could", "should", "about",
+        "which", "their", "there", "these", "those", "been", "being", "were", "when", "where",
+        "while", "after", "before", "using", "make", "more", "into", "over", "such", "also",
+        "some", "than", "them", "then", "very", "well", "only", "just", "even", "what", "your",
+        "each", "other", "does", "said", "many", "much", "here", "like", "back", "down", "used",
+        "through", "same", "both",
+    ]
+    .iter()
+    .copied()
+    .collect();
+
     let mut keyword_to_ideas: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut phrase_to_ideas: HashMap<String, Vec<usize>> = HashMap::new();
+
+    // Extract single words and multi-word phrases
+    let word_regex = Regex::new(r"\b[a-zA-Z]{4,}\b").unwrap();
 
     for idea in ideas {
         let lowercased = idea.text.to_lowercase();
-        let mut seen_in_idea = std::collections::HashSet::new();
+        let words: Vec<&str> = word_regex
+            .find_iter(&lowercased)
+            .map(|m| m.as_str())
+            .collect();
 
-        for cap in word_regex.captures_iter(&lowercased) {
-            if let Some(word_match) = cap.get(0) {
-                let word = word_match.as_str().to_string();
-                if seen_in_idea.insert(word.clone()) {
-                    keyword_to_ideas
-                        .entry(word)
-                        .or_insert_with(Vec::new)
-                        .push(idea.id);
+        let mut seen_keywords: HashSet<String> = HashSet::new();
+        let mut seen_phrases: HashSet<String> = HashSet::new();
+
+        // Extract single keywords (4+ chars, not stop words)
+        for word in &words {
+            if !stop_words.contains(word) {
+                let word_str = word.to_string();
+                if seen_keywords.insert(word_str.clone()) {
+                    keyword_to_ideas.entry(word_str).or_default().push(idea.id);
+                }
+            }
+        }
+
+        // Extract bigrams (2-word phrases)
+        for window in words.windows(2) {
+            if window.len() == 2 && !stop_words.contains(window[1]) {
+                let phrase = format!("{} {}", window[0], window[1]);
+                if seen_phrases.insert(phrase.clone()) {
+                    phrase_to_ideas.entry(phrase).or_default().push(idea.id);
+                }
+            }
+        }
+
+        // Extract trigrams (3-word phrases)
+        for window in words.windows(3) {
+            if window.len() == 3 {
+                let phrase = format!("{} {} {}", window[0], window[1], window[2]);
+                if seen_phrases.insert(phrase.clone()) {
+                    phrase_to_ideas.entry(phrase).or_default().push(idea.id);
                 }
             }
         }
     }
 
-    // Stop words to filter out
-    let stop_words = vec![
-        "that", "this", "with", "from", "have", "will", "would", "could",
-        "should", "about", "which", "their", "there", "these", "those",
-        "been", "being", "were", "when", "where", "while", "after", "before",
-        "using", "make", "more", "into", "over", "such", "also", "some",
-        "than", "them", "then", "very", "well", "only", "just", "even",
-    ];
+    // Filter by threshold (appears in at least 25% of ideas, lowered from 30%)
+    let threshold = (ideas.len() as f32 * 0.25).ceil() as usize;
 
-    // Filter by threshold (appears in at least 30% of ideas)
-    let threshold = (ideas.len() as f32 * 0.3).ceil() as usize;
+    // Combine keywords and phrases with relevance scoring
+    let mut all_themes: Vec<ConsensusTheme> = Vec::new();
 
-    let mut themes: Vec<ConsensusTheme> = keyword_to_ideas
-        .into_iter()
-        .filter(|(word, idea_ids)| {
-            idea_ids.len() >= threshold && !stop_words.contains(&word.as_str())
-        })
-        .map(|(word, idea_ids)| ConsensusTheme {
-            theme: word,
-            frequency: idea_ids.len(),
-            related_ideas: idea_ids,
-        })
-        .collect();
+    // Process single keywords
+    for (word, idea_ids) in keyword_to_ideas {
+        if idea_ids.len() >= threshold && !stop_words.contains(word.as_str()) {
+            all_themes.push(ConsensusTheme {
+                theme: word,
+                frequency: idea_ids.len(),
+                related_ideas: idea_ids,
+            });
+        }
+    }
 
-    // Sort by frequency (descending)
-    themes.sort_by(|a, b| b.frequency.cmp(&a.frequency));
+    // Process phrases (with higher threshold for phrases)
+    let phrase_threshold = (ideas.len() as f32 * 0.2).ceil() as usize;
+    for (phrase, idea_ids) in phrase_to_ideas {
+        if idea_ids.len() >= phrase_threshold && phrase.len() > 8 {
+            all_themes.push(ConsensusTheme {
+                theme: phrase,
+                frequency: idea_ids.len(),
+                related_ideas: idea_ids,
+            });
+        }
+    }
+
+    // Enhanced scoring: frequency * distribution_score
+    // Distribution score is higher when ideas are spread across different positions
+    all_themes.sort_by(|a, b| {
+        let score_a = calculate_theme_score(a, ideas.len());
+        let score_b = calculate_theme_score(b, ideas.len());
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Semantic clustering: group similar themes
+    let clustered = cluster_similar_themes(all_themes);
 
     // Return top 10 themes
-    themes.into_iter().take(10).collect()
+    clustered.into_iter().take(10).collect()
+}
+
+/// Calculate relevance score for a theme
+fn calculate_theme_score(theme: &ConsensusTheme, total_ideas: usize) -> f32 {
+    let frequency_score = theme.frequency as f32;
+
+    // Distribution score: higher when ideas are spread throughout the list
+    let min_id = *theme.related_ideas.iter().min().unwrap_or(&1) as f32;
+    let max_id = *theme.related_ideas.iter().max().unwrap_or(&total_ideas) as f32;
+    let spread = (max_id - min_id) / total_ideas as f32;
+    let distribution_score = 1.0 + spread;
+
+    frequency_score * distribution_score
+}
+
+/// Simple semantic clustering: merge themes with shared words
+fn cluster_similar_themes(themes: Vec<ConsensusTheme>) -> Vec<ConsensusTheme> {
+    use std::collections::HashSet;
+
+    let mut result: Vec<ConsensusTheme> = Vec::new();
+    let mut used_indices: HashSet<usize> = HashSet::new();
+
+    for (i, theme) in themes.iter().enumerate() {
+        if used_indices.contains(&i) {
+            continue;
+        }
+
+        let mut merged_theme = theme.clone();
+        used_indices.insert(i);
+
+        // Look for similar themes (single words that are part of phrases, or vice versa)
+        for (j, other) in themes.iter().enumerate().skip(i + 1) {
+            if used_indices.contains(&j) {
+                continue;
+            }
+
+            // Merge if one theme contains the other as whole words
+            if contains_words(&theme.theme, &other.theme)
+                || contains_words(&other.theme, &theme.theme)
+            {
+                // Prefer the longer/more specific theme
+                if other.theme.len() > merged_theme.theme.len() {
+                    merged_theme.theme = other.theme.clone();
+                }
+                // Merge idea lists
+                for id in &other.related_ideas {
+                    if !merged_theme.related_ideas.contains(id) {
+                        merged_theme.related_ideas.push(*id);
+                    }
+                }
+                merged_theme.frequency = merged_theme.related_ideas.len();
+                used_indices.insert(j);
+            }
+        }
+
+        result.push(merged_theme);
+    }
+
+    result
+}
+
+/// True if `needle` occurs in `haystack` on word boundaries, so "machine
+/// learning" contains "learning" but "training" does not contain "rain".
+fn contains_words(haystack: &str, needle: &str) -> bool {
+    format!(" {} ", haystack).contains(&format!(" {} ", needle))
 }
 
 // Legacy implementation for backward compatibility
@@ -276,7 +390,10 @@ async fn execute_legacy(
         .await?;
 
     let synthesis = response.text;
-    let conversation_history = format!("Round 1\nClaude: {}\nGemini: {}", claude_thoughts, &synthesis);
+    let conversation_history = format!(
+        "Round 1\nClaude: {}\nGemini: {}",
+        claude_thoughts, &synthesis
+    );
 
     Ok(BrainstormOutput {
         synthesis,
@@ -308,6 +425,36 @@ mod tests {
         assert_eq!(input.num_ideas, 20);
         assert_eq!(input.constraints, Some("Must be innovative".to_string()));
         assert!(!input.extract_consensus);
+    }
+
+    #[test]
+    fn test_contains_words_respects_word_boundaries() {
+        assert!(contains_words("machine learning", "learning"));
+        assert!(contains_words(
+            "machine learning models",
+            "machine learning"
+        ));
+        assert!(contains_words("learning", "learning"));
+        assert!(!contains_words("training", "rain"));
+        assert!(!contains_words("restraint systems", "train"));
+    }
+
+    #[test]
+    fn test_cluster_does_not_merge_substrings_of_words() {
+        let themes = vec![
+            ConsensusTheme {
+                theme: "training".to_string(),
+                frequency: 2,
+                related_ideas: vec![1, 2],
+            },
+            ConsensusTheme {
+                theme: "rain".to_string(),
+                frequency: 2,
+                related_ideas: vec![3, 4],
+            },
+        ];
+        let clustered = cluster_similar_themes(themes);
+        assert_eq!(clustered.len(), 2);
     }
 
     #[test]
@@ -356,17 +503,25 @@ mod tests {
 
         assert!(!themes.is_empty());
 
-        // "learning" should appear in themes as it's in 3/4 ideas (75% > 30% threshold)
-        let has_learning = themes.iter().any(|t| t.theme == "learning");
-        assert!(has_learning, "Expected 'learning' in consensus themes");
-
-        // Verify theme structure
-        if let Some(learning_theme) = themes.iter().find(|t| t.theme == "learning") {
-            assert_eq!(learning_theme.frequency, 3);
-            assert!(learning_theme.related_ideas.contains(&1));
-            assert!(learning_theme.related_ideas.contains(&2));
-            assert!(learning_theme.related_ideas.contains(&3));
-        }
+        // "learning" is in 3 of 4 ideas and scores highest, so the first theme
+        // mentioning it absorbs every phrase containing the word and covers
+        // exactly ideas 1-3 (idea 4 never mentions it).
+        let learning_theme = themes
+            .iter()
+            .find(|t| contains_words(&t.theme, "learning"))
+            .expect("Expected a theme containing 'learning'");
+        let mut ids = learning_theme.related_ideas.clone();
+        ids.sort_unstable();
+        assert_eq!(ids, vec![1, 2, 3]);
+        assert_eq!(learning_theme.frequency, 3);
+        assert_eq!(
+            themes
+                .iter()
+                .filter(|t| contains_words(&t.theme, "learning"))
+                .count(),
+            1,
+            "all 'learning' phrases are clustered into one theme"
+        );
     }
 
     #[test]

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::gemini::{client::GeminiClient, models::GeminiModel, types::GenerationConfig};
+use crate::gemini::{client::GeminiClient, models::GeminiModel};
 use crate::tools::types::{GenerationParams, ModelPreference, ResponseMetadata, ToolResponse};
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -147,12 +147,7 @@ pub async fn execute_v2(
         Some(ModelPreference::Flash) | None => GeminiModel::Flash,
     };
 
-    let config = GenerationConfig {
-        temperature: input.params.as_ref().and_then(|p| p.temperature).or(Some(0.4)),
-        max_output_tokens: input.params.as_ref().and_then(|p| p.max_tokens).or(Some(max_tokens)),
-        top_p: input.params.as_ref().and_then(|p| p.top_p),
-        top_k: input.params.as_ref().and_then(|p| p.top_k),
-    };
+    let config = GenerationParams::to_config(input.params.as_ref(), Some(0.4), Some(max_tokens));
 
     let response = client
         .generate_content(&prompt, model, Some(config))
@@ -172,7 +167,7 @@ pub async fn execute_v2(
         key_topics,
     };
 
-    let metadata = ResponseMetadata::with_usage(model.as_str(), &response.usage);
+    let metadata = ResponseMetadata::with_usage(client.model_name(model), &response.usage);
 
     Ok(ToolResponse { result, metadata })
 }
@@ -195,9 +190,9 @@ fn extract_key_topics(text: &str) -> Vec<String> {
 
     // Stop words to filter out
     let stop_words = vec![
-        "that", "this", "with", "from", "have", "will", "would", "could",
-        "should", "about", "which", "their", "there", "these", "those",
-        "been", "being", "were", "when", "where", "while", "after", "before",
+        "that", "this", "with", "from", "have", "will", "would", "could", "should", "about",
+        "which", "their", "there", "these", "those", "been", "being", "were", "when", "where",
+        "while", "after", "before",
     ];
 
     let mut topics: Vec<(String, usize)> = word_counts
@@ -205,7 +200,7 @@ fn extract_key_topics(text: &str) -> Vec<String> {
         .filter(|(word, count)| *count >= 2 && !stop_words.contains(&word.as_str()))
         .collect();
 
-    topics.sort_by(|a, b| b.1.cmp(&a.1));
+    topics.sort_by_key(|topic| std::cmp::Reverse(topic.1));
 
     topics.into_iter().take(5).map(|(word, _)| word).collect()
 }
@@ -251,7 +246,9 @@ mod tests {
         let topics = extract_key_topics(text);
 
         assert!(!topics.is_empty());
-        assert!(topics.contains(&"learning".to_string()) || topics.contains(&"machine".to_string()));
+        assert!(
+            topics.contains(&"learning".to_string()) || topics.contains(&"machine".to_string())
+        );
     }
 
     #[test]

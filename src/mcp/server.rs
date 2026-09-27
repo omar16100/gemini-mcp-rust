@@ -311,61 +311,51 @@ impl McpGeminiServer {
 
         let result = match tool_name {
             // V1 tools (legacy - backward compatibility)
-            "gemini-query" => {
-                match self.execute_query(arguments).await {
-                    Ok(r) => serde_json::json!({"content": [{"type": "text", "text": r}]}),
-                    Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
-                }
-            }
-            "gemini-analyze-code" => {
-                match self.execute_analyze_code(arguments).await {
-                    Ok(r) => serde_json::json!({"content": [{"type": "text", "text": r}]}),
-                    Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
-                }
-            }
-            "gemini-analyze-text" => {
-                match self.execute_analyze_text(arguments).await {
-                    Ok(r) => serde_json::json!({"content": [{"type": "text", "text": r}]}),
-                    Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
-                }
-            }
-            "gemini-summarize" => {
-                match self.execute_summarize(arguments).await {
-                    Ok(r) => serde_json::json!({"content": [{"type": "text", "text": r}]}),
-                    Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
-                }
-            }
-            "gemini-brainstorm" => {
-                match self.execute_brainstorm(arguments).await {
-                    Ok(r) => serde_json::json!({"content": [{"type": "text", "text": r}]}),
-                    Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
-                }
-            }
+            "gemini-query" => match self.execute_query(arguments).await {
+                Ok(r) => serde_json::json!({"content": [{"type": "text", "text": r}]}),
+                Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
+            },
+            "gemini-analyze-code" => match self.execute_analyze_code(arguments).await {
+                Ok(r) => serde_json::json!({"content": [{"type": "text", "text": r}]}),
+                Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
+            },
+            "gemini-analyze-text" => match self.execute_analyze_text(arguments).await {
+                Ok(r) => serde_json::json!({"content": [{"type": "text", "text": r}]}),
+                Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
+            },
+            "gemini-summarize" => match self.execute_summarize(arguments).await {
+                Ok(r) => serde_json::json!({"content": [{"type": "text", "text": r}]}),
+                Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
+            },
+            "gemini-brainstorm" => match self.execute_brainstorm(arguments).await {
+                Ok(r) => serde_json::json!({"content": [{"type": "text", "text": r}]}),
+                Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
+            },
             // V2 tools (structured JSON responses)
-            "gemini-search-v2" => {
-                match self.execute_search_v2(arguments).await {
-                    Ok(r) => serde_json::json!({"content": [{"type": "text", "text": serde_json::to_string_pretty(&r).unwrap_or_else(|_| "{}".to_string())}]}),
-                    Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
+            "gemini-search-v2" => match self.execute_search_v2(arguments).await {
+                Ok(r) => {
+                    serde_json::json!({"content": [{"type": "text", "text": serde_json::to_string_pretty(&r).unwrap_or_else(|_| "{}".to_string())}]})
                 }
-            }
-            "gemini-analyze-v2" => {
-                match self.execute_analyze_v2(arguments).await {
-                    Ok(r) => serde_json::json!({"content": [{"type": "text", "text": serde_json::to_string_pretty(&r).unwrap_or_else(|_| "{}".to_string())}]}),
-                    Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
+                Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
+            },
+            "gemini-analyze-v2" => match self.execute_analyze_v2(arguments).await {
+                Ok(r) => {
+                    serde_json::json!({"content": [{"type": "text", "text": serde_json::to_string_pretty(&r).unwrap_or_else(|_| "{}".to_string())}]})
                 }
-            }
-            "gemini-summarize-v2" => {
-                match self.execute_summarize_v2(arguments).await {
-                    Ok(r) => serde_json::json!({"content": [{"type": "text", "text": serde_json::to_string_pretty(&r).unwrap_or_else(|_| "{}".to_string())}]}),
-                    Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
+                Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
+            },
+            "gemini-summarize-v2" => match self.execute_summarize_v2(arguments).await {
+                Ok(r) => {
+                    serde_json::json!({"content": [{"type": "text", "text": serde_json::to_string_pretty(&r).unwrap_or_else(|_| "{}".to_string())}]})
                 }
-            }
-            "gemini-brainstorm-v2" => {
-                match self.execute_brainstorm_v2(arguments).await {
-                    Ok(r) => serde_json::json!({"content": [{"type": "text", "text": serde_json::to_string_pretty(&r).unwrap_or_else(|_| "{}".to_string())}]}),
-                    Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
+                Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
+            },
+            "gemini-brainstorm-v2" => match self.execute_brainstorm_v2(arguments).await {
+                Ok(r) => {
+                    serde_json::json!({"content": [{"type": "text", "text": serde_json::to_string_pretty(&r).unwrap_or_else(|_| "{}".to_string())}]})
                 }
-            }
+                Err(e) => return JsonRpcResponse::error(-32603, &e.to_string(), Some(id)),
+            },
             _ => {
                 return JsonRpcResponse::error(-32601, "Tool not found", Some(id));
             }
@@ -408,7 +398,10 @@ impl McpGeminiServer {
     }
 
     // V2 API execute methods
-    async fn execute_search_v2(&self, args: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    async fn execute_search_v2(
+        &self,
+        args: serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
         let input: tools::query::SearchInput = serde_json::from_value(args)?;
         let response = tools::query::execute_v2(input, Arc::clone(&self.client)).await?;
 
@@ -416,7 +409,10 @@ impl McpGeminiServer {
         Ok(serde_json::to_value(response)?)
     }
 
-    async fn execute_analyze_v2(&self, args: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    async fn execute_analyze_v2(
+        &self,
+        args: serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
         let input: tools::analyze::AnalyzeInput = serde_json::from_value(args)?;
         let response = tools::analyze::execute_v2(input, Arc::clone(&self.client)).await?;
 
@@ -424,7 +420,10 @@ impl McpGeminiServer {
         Ok(serde_json::to_value(response)?)
     }
 
-    async fn execute_summarize_v2(&self, args: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    async fn execute_summarize_v2(
+        &self,
+        args: serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
         let input: tools::summarize::SummarizeInput = serde_json::from_value(args)?;
         let response = tools::summarize::execute_v2(input, Arc::clone(&self.client)).await?;
 
@@ -432,7 +431,10 @@ impl McpGeminiServer {
         Ok(serde_json::to_value(response)?)
     }
 
-    async fn execute_brainstorm_v2(&self, args: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    async fn execute_brainstorm_v2(
+        &self,
+        args: serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
         let input: tools::brainstorm::BrainstormInput = serde_json::from_value(args)?;
         let response = tools::brainstorm::execute_v2(input, Arc::clone(&self.client)).await?;
 
@@ -443,7 +445,6 @@ impl McpGeminiServer {
 
 #[derive(Debug, Deserialize)]
 struct JsonRpcRequest {
-    jsonrpc: String,
     id: serde_json::Value,
     method: String,
     params: Option<serde_json::Value>,
@@ -488,3 +489,99 @@ impl JsonRpcResponse {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gemini::retry::RetryConfig;
+
+    fn server_for(base_url: String) -> McpGeminiServer {
+        let client = GeminiClient::with_config(
+            "test-key".to_string(),
+            base_url,
+            "pro-model-x".to_string(),
+            "flash-model-y".to_string(),
+            RetryConfig {
+                max_retries: 0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        McpGeminiServer {
+            client: Arc::new(client),
+        }
+    }
+
+    fn request(method: &str, params: Option<serde_json::Value>) -> JsonRpcRequest {
+        JsonRpcRequest {
+            id: serde_json::json!(1),
+            method: method.to_string(),
+            params,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tools_list_registers_nine_tools() {
+        let server = server_for("http://127.0.0.1:9".to_string());
+        let response = server.handle_request(request("tools/list", None)).await;
+        let result = response.result.expect("tools/list result");
+        let mut names: Vec<&str> = result["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect();
+        names.sort_unstable();
+        assert_eq!(
+            names,
+            vec![
+                "gemini-analyze-code",
+                "gemini-analyze-text",
+                "gemini-analyze-v2",
+                "gemini-brainstorm",
+                "gemini-brainstorm-v2",
+                "gemini-query",
+                "gemini-search-v2",
+                "gemini-summarize",
+                "gemini-summarize-v2",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tools_call_search_v2_reports_model_and_cache_flag() {
+        let mut server_mock = mockito::Server::new_async().await;
+        let mock = server_mock
+            .mock("POST", "/models/flash-model-y:generateContent")
+            .with_status(200)
+            .with_body(
+                r#"{"candidates": [{"content": {"role": "model", "parts": [{"text": "Answer: 42"}]}}],
+                    "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 1, "totalTokenCount": 4}}"#,
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let server = server_for(server_mock.url());
+
+        // Unique content so the process-wide search cache cannot be warm.
+        let params = serde_json::json!({
+            "name": "gemini-search-v2",
+            "arguments": {
+                "query": "meaning of life",
+                "model": "flash",
+                "sources": [{"id": "1", "title": "Guide", "content": "server-test-unique-content"}]
+            }
+        });
+        let response = server
+            .handle_request(request("tools/call", Some(params)))
+            .await;
+        let result = response.result.expect("tools/call result");
+        let text = result["content"][0]["text"].as_str().unwrap();
+        let payload: serde_json::Value = serde_json::from_str(text).unwrap();
+
+        assert_eq!(payload["result"]["answer"], "42");
+        assert_eq!(payload["metadata"]["model_used"], "flash-model-y");
+        assert_eq!(payload["metadata"]["total_tokens"], 4);
+        assert_eq!(payload["metadata"]["cached"], false);
+        mock.assert_async().await;
+    }
+}

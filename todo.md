@@ -38,42 +38,64 @@ All files under 2000 lines as required
 
 # Week 3 Implementation TODO
 
-## Phase 1: Foundation
+## Phase 1: Foundation (shipped 27 Sep 2026, branch feat/retry-and-cache)
+Written 23 Dec 2025, shipped after fixes. Plan: docs/27092026_retry_cache_plan.md
+
 ### 1.1 Token Counting
-- [ ] Add UsageMetadata & GenerationResponse to gemini/types.rs
-- [ ] Modify GeminiClient::generate_content() return type
-- [ ] Update existing tools: query, analyze, summarize, brainstorm
-- [ ] Update ResponseMetadata::new() to accept token counts
+- [x] Add UsageMetadata & GenerationResponse to gemini/types.rs
+- [x] Modify GeminiClient::generate_content() return type
+- [x] Update existing tools: query, analyze, summarize, brainstorm
+- [x] ResponseMetadata::with_usage (token counts), from_cache (cached flag)
+- [x] Fix: wire types use camelCase so usageMetadata is actually parsed (was always 0)
 
 ### 1.2 Retry Logic
-- [ ] Create gemini/retry.rs with RetryConfig
-- [ ] Implement retry_with_backoff() function
-- [ ] Integrate retry into GeminiClient
-- [ ] Add tests for retry logic
+- [x] gemini/retry.rs: RetryConfig, retry_with_backoff (exponential backoff + jitter)
+- [x] Integrate retry into GeminiClient (generateContent and startup models.get)
+- [x] Honour Retry-After header and google.rpc.RetryInfo retryDelay; hint above 30 s is not retried
+- [x] Retry only 408/429/500/502/503/504 and connect failures (no replay after timeout)
+- [x] GEMINI_MAX_RETRIES env var (0-10)
+- [x] Tests for statuses, hints, backoff bounds, connect errors, mock-server retries
 
-## Phase 2: Enhanced Features
+## Phase 2: Enhanced Features (shipped 27 Sep 2026, branch feat/retry-and-cache)
 ### 2.1 Query Caching
-- [ ] Create cache/mod.rs with CacheEntry & QueryCache
-- [ ] Integrate caching into query.rs execute_v2()
-- [ ] Add cache tests
+- [x] cache/mod.rs: bounded QueryCache (TTL on Instant, capacity with eviction)
+- [x] Integrate into gemini-search-v2
+- [x] Fix: key = SHA-256 of model ID + full prompt (incl. source content) + generation config
+- [x] Fix: cache hit reports original model, cached=true, zero tokens
+- [x] GEMINI_CACHE_TTL_SECS / GEMINI_CACHE_MAX_ENTRIES env vars
+- [x] Tests: changed content misses, model/params change misses, hit metadata, eviction, expiry
 
 ### 2.2 Improved Consensus
-- [ ] Enhance extract_consensus_themes() in brainstorm.rs
-- [ ] Add semantic clustering
-- [ ] Add multi-word phrase extraction
+- [x] Enhance extract_consensus_themes() in brainstorm.rs
+- [x] Add semantic clustering (merge related themes)
+- [x] Add multi-word phrase extraction (bigrams + trigrams)
+- [x] Relevance scoring (frequency x distribution)
+- [x] Expanded stop words list
+- [x] Thresholds: 25% for keywords, 20% for phrases
 
-## Phase 3-6: New Tools
+### 2.3 Maintenance done alongside (27 Sep 2026)
+- [x] API key sent in x-goog-api-key header instead of URL query string
+- [x] Logs to stderr (stdout is the MCP JSON-RPC channel)
+- [x] Startup check uses models.get (generates no content) instead of generateContent
+- [x] Default models: gemini-3.1-pro-preview, gemini-3.8-flash (gemini-3-pro-preview shut down 9 Mar 2026)
+- [x] gemini-analyze-v2 honours params and options.detail_level
+- [x] cargo fmt, clippy -D warnings clean, dead code removed
+- [x] CI workflow (.github/workflows/ci.yml): fmt, clippy, test
+- [x] README corrections (tool count, removed tool, claude mcp add syntax, config paths, performance table removed)
+- [x] docs/index.md, docs/c4model.md, docs/27092026_retry_cache_plan.md
+
+## Phase 3-6: New Tools (not started)
 - [ ] Create generate.rs (code generation tool)
 - [ ] Create translate.rs (translation tool)
 - [ ] Create qa.rs (Q&A with context tool)
 - [ ] Create extract.rs (data extraction tool)
 
-## Phase 7: MCP Server Integration
+## Phase 7: MCP Server Integration (not started)
 - [ ] Add 4 new tool schemas to server.rs
 - [ ] Add execute methods for new tools
 - [ ] Update tool mappings
 
-## Phase 8: Testing & Verification
+## Phase 8: Testing & Verification (not started)
 - [ ] Unit tests for all new components
 - [ ] Integration tests
 - [ ] Run all tests (target: 54+ tests passing)

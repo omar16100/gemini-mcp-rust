@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::gemini::{client::GeminiClient, models::GeminiModel};
+use crate::gemini::{client::GeminiClient, models::GeminiModel, types::GenerationResponse};
 use crate::tools::types::{GenerationParams, ModelPreference, ResponseMetadata, ToolResponse};
 
 // Shared analyze output for backward compatibility
@@ -74,9 +74,7 @@ pub enum AnalyzerType {
     Sentiment,
 
     #[serde(rename = "comparison")]
-    Comparison {
-        compare_with: String,
-    },
+    Comparison { compare_with: String },
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -208,9 +206,14 @@ pub async fn execute_code(
         .generate_content(&prompt, GeminiModel::Pro, None)
         .await?;
 
-    debug!("Analyze code (legacy): analysis_len={}", response.text.len());
+    debug!(
+        "Analyze code (legacy): analysis_len={}",
+        response.text.len()
+    );
 
-    Ok(AnalyzeOutput { analysis: response.text })
+    Ok(AnalyzeOutput {
+        analysis: response.text,
+    })
 }
 
 // Legacy execute_text for backward compatibility
@@ -239,9 +242,14 @@ pub async fn execute_text(
         .generate_content(&prompt, GeminiModel::Pro, None)
         .await?;
 
-    debug!("Analyze text (legacy): analysis_len={}", response.text.len());
+    debug!(
+        "Analyze text (legacy): analysis_len={}",
+        response.text.len()
+    );
 
-    Ok(AnalyzeOutput { analysis: response.text })
+    Ok(AnalyzeOutput {
+        analysis: response.text,
+    })
 }
 
 // V2 unified analyze implementation
@@ -283,12 +291,13 @@ pub async fn execute_v2(
             (AnalyzeResult::Sentiment(analysis), usage)
         }
         AnalyzerType::Comparison { compare_with } => {
-            let (analysis, usage) = analyze_comparison(&input, compare_with, &client, model).await?;
+            let (analysis, usage) =
+                analyze_comparison(&input, compare_with, &client, model).await?;
             (AnalyzeResult::Comparison(analysis), usage)
         }
     };
 
-    let metadata = ResponseMetadata::with_usage(model.as_str(), &usage);
+    let metadata = ResponseMetadata::with_usage(client.model_name(model), &usage);
 
     Ok(ToolResponse { result, metadata })
 }
@@ -318,10 +327,11 @@ async fn analyze_text(
         focus, input.content
     );
 
-    let response = client.generate_content(&prompt, model, None).await?;
+    let response = run_analyzer(input, client, model, prompt).await?;
 
     // Parse the response (simplified - in production, use JSON mode)
-    let sentiment = extract_field(&response.text, "sentiment").unwrap_or_else(|| "neutral".to_string());
+    let sentiment =
+        extract_field(&response.text, "sentiment").unwrap_or_else(|| "neutral".to_string());
     let themes = extract_list(&response.text, "theme");
     let tone = extract_field(&response.text, "tone").unwrap_or_else(|| "neutral".to_string());
     let key_points = extract_list(&response.text, "key point");
@@ -361,13 +371,14 @@ async fn analyze_code(
         lang_info, input.content
     );
 
-    let response = client.generate_content(&prompt, model, None).await?;
+    let response = run_analyzer(input, client, model, prompt).await?;
 
     // Parse response (simplified)
     let quality_score = extract_score(&response.text).unwrap_or(5.0);
     let issues = extract_issues(&response.text);
     let patterns = extract_list(&response.text, "pattern");
-    let complexity = extract_field(&response.text, "complexity").unwrap_or_else(|| "moderate".to_string());
+    let complexity =
+        extract_field(&response.text, "complexity").unwrap_or_else(|| "moderate".to_string());
     let suggestions = extract_list(&response.text, "suggestion");
 
     let analysis = CodeAnalysis {
@@ -399,9 +410,10 @@ async fn analyze_document(
         input.content
     );
 
-    let response = client.generate_content(&prompt, model, None).await?;
+    let response = run_analyzer(input, client, model, prompt).await?;
 
-    let structure = extract_field(&response.text, "structure").unwrap_or_else(|| "linear".to_string());
+    let structure =
+        extract_field(&response.text, "structure").unwrap_or_else(|| "linear".to_string());
     let readability_score = extract_score(&response.text).unwrap_or(7.0);
     let sections = extract_list(&response.text, "section");
     let key_points = extract_list(&response.text, "key point");
@@ -433,10 +445,10 @@ async fn analyze_sentiment(
         input.content
     );
 
-    let response = client.generate_content(&prompt, model, None).await?;
+    let response = run_analyzer(input, client, model, prompt).await?;
 
-    let overall_sentiment = extract_field(&response.text, "sentiment")
-        .unwrap_or_else(|| "neutral".to_string());
+    let overall_sentiment =
+        extract_field(&response.text, "sentiment").unwrap_or_else(|| "neutral".to_string());
     let confidence = extract_score(&response.text).unwrap_or(0.5);
     let emotions = extract_emotions(&response.text);
 
@@ -468,31 +480,54 @@ async fn analyze_comparison(
         input.content, compare_with
     );
 
-    let response = client.generate_content(&prompt, model, None).await?;
+    let response = run_analyzer(input, client, model, prompt).await?;
 
     let similarities = extract_list(&response.text, "similar");
     let differences = extract_list(&response.text, "differ");
     let verdict = extract_field(&response.text, "verdict")
         .unwrap_or_else(|| "moderately similar".to_string());
 
-    Ok(ComparisonAnalysis {
+    let analysis = ComparisonAnalysis {
         similarities,
         differences,
         verdict,
-    })
+    };
+
+    Ok((analysis, response.usage))
+}
+
+/// Send an analyzer prompt, applying the caller's detail level and
+/// generation params.
+async fn run_analyzer(
+    input: &AnalyzeInput,
+    client: &GeminiClient,
+    model: GeminiModel,
+    prompt: String,
+) -> anyhow::Result<GenerationResponse> {
+    let prompt = format!("{}{}", prompt, detail_instruction(input.options.as_ref()));
+    let config = input
+        .params
+        .as_ref()
+        .map(|params| GenerationParams::to_config(Some(params), None, None));
+    Ok(client.generate_content(&prompt, model, config).await?)
+}
+
+/// Extra prompt text for the requested detail level ("standard" adds none).
+fn detail_instruction(options: Option<&AnalyzerOptions>) -> &'static str {
+    match options.map(|o| &o.detail_level) {
+        Some(DetailLevel::Brief) => "\n\nKeep the analysis brief.",
+        Some(DetailLevel::Comprehensive) => {
+            "\n\nBe comprehensive: cover every relevant aspect in depth."
+        }
+        Some(DetailLevel::Standard) | None => "",
+    }
 }
 
 // Helper parsing functions (simplified - in production, use structured JSON output)
 fn extract_field(text: &str, field: &str) -> Option<String> {
     text.lines()
         .find(|line| line.to_lowercase().contains(field))
-        .map(|line| {
-            line.split(':')
-                .nth(1)
-                .unwrap_or("")
-                .trim()
-                .to_string()
-        })
+        .map(|line| line.split(':').nth(1).unwrap_or("").trim().to_string())
 }
 
 fn extract_score(text: &str) -> Option<f32> {
@@ -507,7 +542,10 @@ fn extract_score(text: &str) -> Option<f32> {
 
 fn extract_list(text: &str, keyword: &str) -> Vec<String> {
     text.lines()
-        .filter(|line| line.to_lowercase().contains(keyword) && (line.starts_with('-') || line.starts_with('*') || line.contains('•')))
+        .filter(|line| {
+            line.to_lowercase().contains(keyword)
+                && (line.starts_with('-') || line.starts_with('*') || line.contains('•'))
+        })
         .map(|line| {
             line.trim_start_matches('-')
                 .trim_start_matches('*')
@@ -565,7 +603,10 @@ mod tests {
     #[test]
     fn test_extract_field() {
         let text = "Sentiment: positive\nTone: formal";
-        assert_eq!(extract_field(text, "sentiment"), Some("positive".to_string()));
+        assert_eq!(
+            extract_field(text, "sentiment"),
+            Some("positive".to_string())
+        );
         assert_eq!(extract_field(text, "tone"), Some("formal".to_string()));
     }
 

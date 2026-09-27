@@ -7,8 +7,8 @@ pub enum GeminiModel {
 impl GeminiModel {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Pro => "gemini-3-pro-preview",
-            Self::Flash => "gemini-3-flash-preview",
+            Self::Pro => "gemini-3.1-pro-preview",
+            Self::Flash => "gemini-3.8-flash",
         }
     }
 
@@ -27,17 +27,14 @@ mod tests {
 
     #[test]
     fn test_model_as_str() {
-        assert_eq!(GeminiModel::Pro.as_str(), "gemini-3-pro-preview");
-        assert_eq!(GeminiModel::Flash.as_str(), "gemini-3-flash-preview");
+        assert_eq!(GeminiModel::Pro.as_str(), "gemini-3.1-pro-preview");
+        assert_eq!(GeminiModel::Flash.as_str(), "gemini-3.8-flash");
     }
 
     #[test]
     fn test_model_from_str() {
         assert!(matches!(GeminiModel::from_str("pro"), GeminiModel::Pro));
-        assert!(matches!(
-            GeminiModel::from_str("flash"),
-            GeminiModel::Flash
-        ));
+        assert!(matches!(GeminiModel::from_str("flash"), GeminiModel::Flash));
         assert!(matches!(
             GeminiModel::from_str("gemini-flash"),
             GeminiModel::Flash
