@@ -3,6 +3,7 @@ use dotenvy::dotenv;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+mod cache;
 mod error;
 mod gemini;
 mod mcp;
@@ -37,17 +38,22 @@ async fn main() -> anyhow::Result<()> {
         EnvFilter::new("info")
     };
 
+    // Logs go to stderr: stdout carries the MCP JSON-RPC stream and must
+    // contain nothing else.
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)
+        .with_writer(std::io::stderr)
         .init();
 
-    info!("Starting Gemini MCP Server (Rust) v{}", env!("CARGO_PKG_VERSION"));
+    info!(
+        "Starting Gemini MCP Server (Rust) v{}",
+        env!("CARGO_PKG_VERSION")
+    );
 
     // Get API key
-    let api_key = std::env::var("GEMINI_API_KEY").map_err(|_| {
-        anyhow::anyhow!("GEMINI_API_KEY environment variable required")
-    })?;
+    let api_key = std::env::var("GEMINI_API_KEY")
+        .map_err(|_| anyhow::anyhow!("GEMINI_API_KEY environment variable required"))?;
 
     // Create server
     let server = mcp::server::McpGeminiServer::new(api_key)?;
