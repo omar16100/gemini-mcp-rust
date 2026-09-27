@@ -392,7 +392,7 @@ async fn execute_legacy(
     let synthesis = response.text;
     let conversation_history = format!(
         "Round 1\nClaude: {}\nGemini: {}",
-        claude_thoughts, &synthesis
+        claude_thoughts, synthesis
     );
 
     Ok(BrainstormOutput {
